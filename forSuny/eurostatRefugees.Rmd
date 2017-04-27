@@ -1,0 +1,106 @@
+---
+title: "eurostat scratchpad"
+author: "Anne Rutten"
+date: "April 26, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(dplyr)
+require(tidyr)
+require(ggplot2)
+```
+
+notes taken by Anne during R-meetup with Suny, about data preparation/visualisation for the eurostat refugee data.
+
+#### aim: 
+push the data around so that it's easy to plot rejected vs. total number of applications per country of origin & destination.
+
+#### current status:
+* generates a dataframe with total and n_rejected for each origin-destination-year, split in two parts by total number of applications per origin (for plotting); total applications per country of origin & destination are also in the dataframe for ease of filtering.
+* generates 2 overview plots per year for origin vs. destination, where point size corresponds with total number of applications and colour corresponds with % rejected.
+
+### install package: set eval= TRUE if you need to do this
+1: install the devtools package
+```{r eval=FALSE}
+install.packages("devtools")
+```
+2: install eurostatasyl package from github:
+```{r eval=FALSE}
+devtools::install_github("alrutten/r-eurostat-refugees")
+```
+2a: if you run into an error about the SSL CA cert, set your curl options to ignore this:
+```{r eval=FALSE}
+require(httr)
+set_config( config( ssl_verifypeer = 0L ) )
+```
+
+3: require the eurostat package. hmm dependencies don't get libraried automatically.
+`require(eurostatasyl)`
+`require(dplyr)`
+`require(tidyr)`
+`require(eurostat)`
+
+### work with the data
+
+1: download the data from eurostat, and load into a dataframe. Change data directory first!
+```{r eval=TRUE}
+#load_data_acceptance_api() #downloads SOMETHING. But what is it?
+#d <- load_data_acceptance_file("/tmp/RtmpvjmLel/eurostat/migr_asydcfstq_date_code_TF.rds")
+#d2 <- load_data_acceptance_file("/home/anne/personal/eurostat/r-eurostat-refugees/data/data_acceptance")
+#labeling is not working, load data directly:
+d <- readRDS("/home/anne/personal/eurostat/r-eurostat-refugees/data/data_acceptance")
+```
+2: generate citizen-geo-year_-NRejected-NTotal dataframe (with geo- and citizenTotals too)
+```{r eval=TRUE}
+d_perYearCitizenGeoDecision <- d %>%
+                              # filter on totals for gender and age, filter out totals for geo (destination) and citizen(origin)
+                              filter(age == "Total",
+                              sex == "Total",
+                              decision %in% c("Rejected", "Total_positive_decisions", "Total"),
+                              citizen != "Total",
+                              geo != "Total",
+                              !grepl("(EU)|(European)",citizen)) %>%   # rejected based on Dublin?
+                              # extract year_
+                              mutate(year_ = substr(time,1,4)) %>%
+                              # calculate totals per country of origin
+                              group_by(citizen) %>%
+                              mutate(originTotals = sum(values[decision!="Total"])) %>%
+                              # create splitting variable based on totals per country of origin.
+                              ungroup() %>%
+                              mutate(origin_split = as.numeric(originTotals<= median(originTotals))) %>%
+                              # calculate totals per country of destination
+                              group_by(geo) %>%
+                              mutate(destinationTotals = sum(values[decision!="Total"])) %>%
+                              # calculate totals per origin-destination-year-decision  
+                              group_by(citizen, geo, year_, decision, origin_split, originTotals, destinationTotals) %>%
+                              summarise(totalCount = sum(values)) %>%
+                              # get each decision level in it's own column 
+                              spread(decision, totalCount )
+  
+```
+
+3: make overview plotlist (alternatively, you can use facet_wrap(), but that's harder to control). Note that i didn't logtransform the totals.
+```{r eval=TRUE}
+
+dotplotlist <- d_perYearCitizenGeoDecision %>% 
+              ungroup() %>%
+              group_by(year_, origin_split) %>%
+              do(dotplot =ggplot(., aes(substr(citizen,1,14), substr(geo,1,14), size=Total, colour = Rejected/Total)) +
+                            geom_point() +
+                            scale_colour_gradient(low = "blue", high = "orange") +
+                            theme(axis.text.x = element_text(angle = 90, vjust = 0.5,hjust=0)) + 
+                            ggtitle(paste0("year: ",.$year_, ifelse(.$origin_split==0," higher number of applications"," lower number of applications"))) +
+                            labs(colour = "proportion rejected",
+                                 x = "country of origin",
+                                 y = "country of destination")
+              )
+              
+  
+```
+
+4: plot all the plots
+```{r eval=TRUE, fig.width=15,fig.height=11}
+for (i in 1:nrow(dotplotlist)) print(dotplotlist$dotplot[[i]])
+```
