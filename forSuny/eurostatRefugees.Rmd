@@ -81,7 +81,8 @@ d_perYearCitizenGeoDecision <- d %>%
   
 ```
 
-3: make overview plotlist (alternatively, you can use facet_wrap(), but that's harder to control). Note that i didn't logtransform the totals.
+### plotting: overview 
+1: make overview plotlist (alternatively, you can use facet_wrap(), but that's harder to control). Note that i didn't logtransform the totals.
 ```{r eval=TRUE}
 
 dotplotlist <- d_perYearCitizenGeoDecision %>% 
@@ -100,7 +101,30 @@ dotplotlist <- d_perYearCitizenGeoDecision %>%
   
 ```
 
-4: plot all the plots
+2: plot all the plots
 ```{r eval=TRUE, fig.width=15,fig.height=11}
 for (i in 1:nrow(dotplotlist)) print(dotplotlist$dotplot[[i]])
+```
+
+### plotting: per country of origin (for instance). shh, it's pie charts..
+
+pie size corresponds with log(Total).
+```{r eval=TRUE, fig.width=15,fig.height=11}
+focalOrigin = "Eritrea"
+selectedData <- filter(d_perYearCitizenGeoDecision, citizen==focalOrigin) %>%
+                mutate(Accepted = Total-Rejected) %>%
+                gather(decision, value, Rejected, Accepted)
+
+ggplot(selectedData, aes(x=log(Total+1)/2, y = value, fill = decision, width =log(Total+1))) +
+  geom_bar(position = "fill", stat="identity") + 
+  facet_grid(year_ ~ geo, switch = "y") +
+  coord_polar("y") +
+  scale_fill_manual(values = c("blue","orange")) +
+  ggtitle(paste("country of origin:",focalOrigin)) +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        strip.text.x = element_text(angle = 90, hjust=0.5, vjust=0),
+        strip.text.y = element_text(angle = 180),
+        axis.ticks = element_blank()) 
 ```
